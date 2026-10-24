@@ -1,166 +1,264 @@
-<script lang="ts">
-	import { enhance } from '$app/forms';
-	import type { ActionData, PageData } from './$types';
+<script>
+  import { onMount } from 'svelte';
 
-	let { data, form }: { data: PageData; form: ActionData } = $props();
+  // おみくじの結果データ
+  const results = [
+    {
+      title: '超大吉 🌟',
+      desc: '最高の1日になります！やりたいことに挑戦しましょう。',
+      bgColor: 'linear-gradient(135deg, #2b1055 0%, #7597de 100%)',
+      accentColor: '#ffd700',
+      soundFreq: 880 // 効果音の周波数 (高音)
+    },
+    {
+      title: '大吉 🎉',
+      desc: '運気は絶好調！素晴らしいチャンスが巡ってきそうです。',
+      bgColor: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
+      accentColor: '#00f2fe',
+      soundFreq: 660
+    },
+    {
+      title: '吉 🌸',
+      desc: '穏やかで幸運な1日。日常の小さな幸せを見つけられます。',
+      bgColor: 'linear-gradient(135deg, #134e5e 0%, #71b280 100%)',
+      accentColor: '#4facfe',
+      soundFreq: 523
+    },
+    {
+      title: '中吉 🍀',
+      desc: '努力が実を結ぶ日。焦らず着実に進めましょう。',
+      bgColor: 'linear-gradient(135deg, #3a1c71 0%, #d76d77 100%)',
+      accentColor: '#ff0844',
+      soundFreq: 440
+    },
+    {
+      title: '小吉 🌱',
+      desc: 'ささやかな幸せが訪れる予感。笑顔で過ごしましょう。',
+      bgColor: 'linear-gradient(135deg, #200122 0%, #6f0000 100%)',
+      accentColor: '#ffb199',
+      soundFreq: 392
+    },
+    {
+      title: '末吉 🕊️',
+      desc: 'これから運気が上がっていきます。マイペースが吉。',
+      bgColor: 'linear-gradient(135deg, #0f2027 0%, #203a43 100%)',
+      accentColor: '#a8c0ff',
+      soundFreq: 330
+    }
+  ];
 
-	let drawing = $state(false);
+  let slots = ['❓', '❓', '❓'];
+  let isSpinning = false;
+  let currentResult = null;
+  let currentBg = 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)';
+  let audioCtx = null;
 
-	const rankTone: Record<string, string> = {
-		大吉: '#c9a227',
-		中吉: '#b3261e',
-		小吉: '#b3261e',
-		吉: '#3f6d4e',
-		末吉: '#3f6d4e',
-		凶: '#4a4a4a',
-		大凶: '#2b2b2b'
-	};
+  // Web Audio API によるWeb標準効果音の再生（外部ファイル不要）
+  function playSound(freq, duration = 0.15, type = 'sine') {
+    try {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // スロットを回す処理
+  function startSlot() {
+    if (isSpinning) return;
+    
+    isSpinning = true;
+    currentResult = null;
+
+    let counter = 0;
+    const interval = setInterval(() => {
+      // ドラム回転中のランダム表示
+      slots = slots.map(() => results[Math.floor(Math.random() * results.length)].title.split(' ')[0]);
+      playSound(300 + (counter % 5) * 50, 0.05, 'square');
+      counter++;
+
+      if (counter > 25) { // 約2.5秒後に停止
+        clearInterval(interval);
+        
+        // 最終結果の決定
+        const finalIndex = Math.floor(Math.random() * results.length);
+        const selected = results[finalIndex];
+        
+        const shortTitle = selected.title.split(' ')[0];
+        slots = [shortTitle, shortTitle, shortTitle];
+        
+        currentResult = selected;
+        currentBg = selected.bgColor;
+        isSpinning = false;
+
+        // ファンファーレ風の効果音再生
+        setTimeout(() => playSound(selected.soundFreq, 0.2, 'triangle'), 0);
+        setTimeout(() => playSound(selected.soundFreq * 1.25, 0.2, 'triangle'), 150);
+        setTimeout(() => playSound(selected.soundFreq * 1.5, 0.4, 'triangle'), 300);
+      }
+    }, 100);
+  }
 </script>
 
-<svelte:head>
-	<title>おみくじ</title>
-	<meta name="description" content="SvelteKit 製のおみくじアプリ" />
-</svelte:head>
+<main style="background: {currentBg}">
+  <div class="card">
+    <h1 class="title">🎰 スロットおみくじ 🎰</h1>
 
-<section class="card">
-	<h1>今日の運勢を占う</h1>
-	<p class="lead">おみくじを引くと、結果が自動で記録に残ります。</p>
+    <!-- スロットディスプレイ -->
+    <div class="slot-container">
+      {#each slots as slot}
+        <div class="slot-box" class:spinning={isSpinning}>
+          <span>{slot}</span>
+        </div>
+      {/each}
+    </div>
 
-	<form
-		method="POST"
-		action="?/draw"
-		use:enhance={() => {
-			drawing = true;
-			return async ({ update }) => {
-				await update({ reset: false });
-				drawing = false;
-			};
-		}}
-	>
-		<button type="submit" disabled={drawing}>
-			{drawing ? '引いています…' : 'おみくじを引く'}
-		</button>
-	</form>
+    <!-- スタートボタン -->
+    <button class="spin-btn" on:click={startSlot} disabled={isSpinning}>
+      {isSpinning ? 'シャッフル中...' : 'おみくじを引く！'}
+    </button>
 
-	{#if form?.result}
-		<div class="result" style="--tone: {rankTone[form.result.rank] ?? 'var(--accent)'}">
-			<p class="rank">{form.result.rank}</p>
-			<p class="message">{form.result.message}</p>
-			<dl>
-				<div><dt>ラッキーカラー</dt><dd>{form.result.lucky.color}</dd></div>
-				<div><dt>ラッキーアイテム</dt><dd>{form.result.lucky.item}</dd></div>
-				<div><dt>ラッキーナンバー</dt><dd>{form.result.lucky.number}</dd></div>
-			</dl>
-			{#if !form.persisted}
-				<p class="warn">
-					※ 記録は一時保存です（Redis 未接続）。Upstash を設定すると永続化されます。
-				</p>
-			{/if}
-		</div>
-	{:else if data.lastDrawnAt}
-		<p class="note">
-			前回引いた日時: {new Date(data.lastDrawnAt).toLocaleString('ja-JP')}
-		</p>
-	{/if}
-
-	<p class="note">
-		<a href="/history">おみくじ記録を見る →</a>
-	</p>
-</section>
+    <!-- 結果表示エリア -->
+    {#if currentResult}
+      <div class="result-box" style="border-color: {currentResult.accentColor}">
+        <h2 style="color: {currentResult.accentColor}">{currentResult.title}</h2>
+        <p>{currentResult.desc}</p>
+      </div>
+    {/if}
+  </div>
+</main>
 
 <style>
-	.card {
-		background: var(--surface);
-		border: 1px solid var(--line);
-		border-radius: 1rem;
-		padding: 2rem 1.5rem;
-		text-align: center;
-	}
+  :global(body) {
+    margin: 0;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: #f8fafc;
+  }
 
-	h1 {
-		margin: 0 0 0.25rem;
-		font-size: 1.4rem;
-	}
+  main {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    transition: background 0.8s ease;
+    box-sizing: border-box;
+  }
 
-	.lead {
-		margin: 0 0 1.75rem;
-		color: var(--muted);
-		font-size: 0.9rem;
-	}
+  .card {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    padding: 32px 24px;
+    width: 100%;
+    max-width: 440px;
+    text-align: center;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  }
 
-	button {
-		font: inherit;
-		font-weight: 700;
-		padding: 0.85rem 2.5rem;
-		border: none;
-		border-radius: 999px;
-		background: var(--accent);
-		color: #fff;
-		cursor: pointer;
-	}
+  .title {
+    font-size: 1.5rem;
+    margin-bottom: 24px;
+    letter-spacing: 0.05em;
+  }
 
-	button:disabled {
-		opacity: 0.6;
-		cursor: progress;
-	}
+  .slot-container {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
 
-	.result {
-		margin-top: 2rem;
-		padding-top: 1.5rem;
-		border-top: 1px dashed var(--line);
-	}
+  .slot-box {
+    width: 90px;
+    height: 90px;
+    background: rgba(30, 41, 59, 0.9);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: bold;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
 
-	.rank {
-		margin: 0;
-		font-size: 3rem;
-		font-weight: 800;
-		letter-spacing: 0.1em;
-		color: var(--tone);
-	}
+  .slot-box.spinning {
+    animation: pulse 0.2s infinite alternate;
+  }
 
-	.message {
-		margin: 0.5rem 0 1.5rem;
-	}
+  @keyframes pulse {
+    from { transform: translateY(-2px); }
+    to { transform: translateY(2px); }
+  }
 
-	dl {
-		display: grid;
-		gap: 0.5rem;
-		margin: 0;
-		text-align: left;
-		max-width: 20rem;
-		margin-inline: auto;
-	}
+  .spin-btn {
+    width: 100%;
+    padding: 16px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #ffffff;
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    transition: all 0.2s ease;
+  }
 
-	dl > div {
-		display: flex;
-		justify-content: space-between;
-		border-bottom: 1px solid var(--line);
-		padding-bottom: 0.25rem;
-	}
+  .spin-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
+  }
 
-	dt {
-		color: var(--muted);
-		font-size: 0.85rem;
-	}
+  .spin-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 
-	dd {
-		margin: 0;
-		font-weight: 600;
-	}
+  .result-box {
+    margin-top: 24px;
+    padding: 20px;
+    background: rgba(30, 41, 59, 0.8);
+    border-radius: 16px;
+    border: 2px solid;
+    animation: fadeIn 0.5s ease-out;
+  }
 
-	.warn {
-		margin-top: 1.25rem;
-		font-size: 0.75rem;
-		color: var(--muted);
-	}
+  .result-box h2 {
+    margin: 0 0 8px 0;
+    font-size: 1.5rem;
+  }
 
-	.note {
-		margin-top: 1.5rem;
-		font-size: 0.85rem;
-		color: var(--muted);
-	}
+  .result-box p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #cbd5e1;
+    line-height: 1.5;
+  }
 
-	.note a {
-		color: var(--accent);
-	}
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 </style>
